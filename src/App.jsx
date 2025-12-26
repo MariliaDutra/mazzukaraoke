@@ -1,32 +1,26 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "./supabaseClient";
 
-// Tempo padrão de cada rodada (segundos)
 const ROUND_TIME_SECONDS = 7;
 
 function App() {
-  // Todas as palavras carregadas do Supabase (respeitando filtro de idioma)
   const [allWords, setAllWords] = useState([]);
-  // Palavras ainda disponíveis para sortear na sessão atual
   const [availableWords, setAvailableWords] = useState([]);
-  // Palavra atualmente sorteada
   const [currentWord, setCurrentWord] = useState(null);
 
-  // Timer
   const [timeLeft, setTimeLeft] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
 
-  // Estados de carregamento / erro
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Histórico de palavras já sorteadas (para exibir no painel da direita)
   const [history, setHistory] = useState([]);
-
-  // Filtro de idioma: "PT" ou "ALL"
   const [languageFilter, setLanguageFilter] = useState("ALL");
 
-  // Área "admin" para inserir palavra
+  const [participants, setParticipants] = useState([]);
+  const [newParticipantName, setNewParticipantName] = useState("");
+  const [activeParticipantId, setActiveParticipantId] = useState(null);
+
   const [newWord, setNewWord] = useState("");
   const [newLanguage, setNewLanguage] = useState("PT");
   const [newTheme, setNewTheme] = useState("");
@@ -34,24 +28,18 @@ function App() {
   const [savingWord, setSavingWord] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
 
-  // Referência para o intervalo do timer
   const timerRef = useRef(null);
 
-  // Carrega palavras sempre que o filtro de idioma muda
+  // 1) Carrega palavras do Supabase sempre que o filtro de idioma muda
   useEffect(() => {
     async function loadWords() {
       setLoading(true);
       setErrorMsg("");
 
-      // Monta query base
       let query = supabase.from("karaoke_words").select("*");
-
-      // Se filtro BR estiver ativo, traz só linguagem PT
       if (languageFilter === "PT") {
         query = query.eq("language", "PT");
       }
-
-      // Ordena só para ficar consistente
       query = query.order("word", { ascending: true });
 
       const { data, error } = await query;
@@ -63,7 +51,6 @@ function App() {
         return;
       }
 
-      // Quando troca o filtro, zera estado da roleta
       setAllWords(data || []);
       setAvailableWords(data || []);
       setCurrentWord(null);
@@ -76,23 +63,19 @@ function App() {
     loadWords();
   }, [languageFilter]);
 
-  // Limpa timer ao desmontar componente
+  // Limpa o timer se o componente desmontar
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
 
-  // Inicia o timer de contagem regressiva
+  // 2) Timer simples de contagem regressiva
   function startTimer() {
     setIsRunning(true);
     setTimeLeft(ROUND_TIME_SECONDS);
 
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
+    if (timerRef.current) clearInterval(timerRef.current);
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
@@ -107,21 +90,17 @@ function App() {
     }, 1000);
   }
 
-  // Para o timer
   function stopTimer() {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
     setIsRunning(false);
   }
 
-  // Sorteia uma palavra da lista disponível
+  // 3) Sorteio da palavra
   function handleSortWord() {
     setErrorMsg("");
 
     if (!availableWords.length) {
-      // Se não houver palavras disponíveis, avisa para reiniciar roleta
       setCurrentWord(null);
       setTimeLeft(0);
       setIsRunning(false);
@@ -135,12 +114,10 @@ function App() {
     setCurrentWord(chosen);
     startTimer();
 
-    // Remove a palavra escolhida da lista disponível, para não repetir
     const remaining = [...availableWords];
     remaining.splice(randomIndex, 1);
     setAvailableWords(remaining);
 
-    // Atualiza histórico (mais recente no topo)
     setHistory((prev) => [
       {
         id: chosen.id,
@@ -148,26 +125,40 @@ function App() {
         language: chosen.language,
         theme: chosen.theme,
         createdAt: new Date().toISOString(),
+        validated: false,
       },
       ...prev,
     ]);
   }
 
-  // Pula a palavra atual (não volta para a lista, continua como "usada" na sessão)
   function handleSkipWord() {
     stopTimer();
     setCurrentWord(null);
     setTimeLeft(0);
   }
 
-  // Validar música só para efeito de fluxo (aqui não altera nada extra)
+  // 4) Validar música: para timer, marca histórico e dá ponto ao participante ativo
   function handleValidateRound() {
     if (!currentWord) return;
     stopTimer();
-    // Se algum dia quiser registrar mais info da música, pode ser aqui
+
+    setHistory((prev) =>
+      prev.map((item, index) =>
+        index === 0 && item.word === currentWord.word
+          ? { ...item, validated: true }
+          : item
+      )
+    );
+
+    if (activeParticipantId) {
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.id === activeParticipantId ? { ...p, score: p.score + 1 } : p
+        )
+      );
+    }
   }
 
-  // Recarrega todas as palavras na sessão (não mexe no banco)
   function handleResetRaffle() {
     setAvailableWords(allWords);
     setCurrentWord(null);
@@ -177,7 +168,7 @@ function App() {
     setHistory([]);
   }
 
-  // Insere nova palavra via Supabase (modo admin)
+  // 5) Inserir nova palavra no Supabase (admin)
   async function handleAddWord(e) {
     e.preventDefault();
     if (!newWord.trim()) return;
@@ -205,7 +196,6 @@ function App() {
       return;
     }
 
-    // Atualiza listas locais (respeitando filtro atual)
     const matchesFilter =
       languageFilter === "ALL" || data.language === languageFilter;
 
@@ -214,55 +204,73 @@ function App() {
       setAvailableWords((prev) => [...prev, data]);
     }
 
-    // Limpa formulário
     setNewWord("");
     setNewTheme("");
     setNewYoutubeUrl("");
-
     setSavingWord(false);
   }
 
+  // 6) Participantes
+  function handleAddParticipant(e) {
+    e.preventDefault();
+    if (!newParticipantName.trim()) return;
+
+    const newP = {
+      id: Date.now(),
+      name: newParticipantName.trim(),
+      score: 0,
+    };
+
+    setParticipants((prev) => [...prev, newP]);
+    setNewParticipantName("");
+
+    if (!activeParticipantId) {
+      setActiveParticipantId(newP.id);
+    }
+  }
+
+  function changeScore(id, delta) {
+    setParticipants((prev) =>
+      prev.map((p) =>
+        p.id === id ? { ...p, score: p.score + delta } : p
+      )
+    );
+  }
+
+  // 7) Render
   if (loading) {
     return (
-      <div style={styles.page}>
-        <div style={styles.mainOverlay}>
-          <h1 style={styles.title}>Vitrola Mágica</h1>
-          <p style={styles.subtitle}>carregando palavras...</p>
+      <div className="page">
+        <div className="main-overlay">
+          <h1 className="app-title">Vitrola Mágica</h1>
+          <p className="app-subtitle">carregando palavras...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={styles.page}>
-      {/* Container com fundo semi-transparente sobre o background */}
-      <div style={styles.mainOverlay}>
-        {/* Topo: título à esquerda, filtro de idioma à direita */}
-        <div style={styles.headerRow}>
+    <div className="page">
+      <div className="main-overlay">
+        {/* Título + filtro idioma */}
+        <div className="header-row">
           <div>
-            <h1 style={styles.title}>Vitrola Mágica</h1>
-            <p style={styles.subtitle}>cante se lembrar</p>
+            <h1 className="app-title">Vitrola Mágica</h1>
+            <p className="app-subtitle">cante se lembrar</p>
           </div>
 
-          <div style={styles.languageSwitch}>
-            {/* Botão BR (PT apenas) */}
+          <div className="language-switch">
             <button
-              style={
-                languageFilter === "PT"
-                  ? styles.langButtonActive
-                  : styles.langButton
+              className={
+                languageFilter === "PT" ? "lang-btn--active" : "lang-btn"
               }
               onClick={() => setLanguageFilter("PT")}
             >
-              🇧🇷
+              BR
             </button>
-
-            {/* Botão ALL (todas as línguas) */}
             <button
-              style={
-                languageFilter === "ALL"
-                  ? styles.langButtonActive
-                  : styles.langButton
+              className={
+                languageFilter === "ALL" ? "lang-btn--active" : "lang-btn"
               }
               onClick={() => setLanguageFilter("ALL")}
             >
@@ -271,55 +279,46 @@ function App() {
           </div>
         </div>
 
-        {errorMsg && (
-          <p style={{ color: "#fecaca", marginBottom: "0.75rem" }}>
-            {errorMsg}
-          </p>
-        )}
+        {errorMsg && <p className="error-message">{errorMsg}</p>}
 
-        {/* Layout 3/4 (roleta) + 1/4 (histórico) */}
-        <div style={styles.contentRow}>
-          {/* Área da roleta (75%) */}
-          <div style={styles.leftPanel}>
-            {/* Caixa central com palavra e timer */}
-            <div style={styles.currentBox}>
-              <p style={styles.label}>Palavra sorteada:</p>
-              <p style={styles.word}>
+        <div className="content-row">
+          {/* Painel esquerdo: roleta + participantes */}
+          <div className="left-panel">
+            <div className="current-box">
+              <p className="current-label">Palavra sorteada:</p>
+              <p className="current-word">
                 {currentWord ? currentWord.word.toUpperCase() : "—"}
               </p>
               {currentWord && (
-                <p style={styles.meta}>
-                  {currentWord.theme ? `Tema: ${currentWord.theme} · ` : ""}
-                  {currentWord.language ? `Idioma: ${currentWord.language}` : ""}
+                <p className="current-meta">
+                  {currentWord.language
+                    ? `Idioma: ${currentWord.language}`
+                    : ""}
                 </p>
               )}
-              <p style={styles.timer}>Tempo: {timeLeft}s</p>
+              <p className="current-timer">Tempo: {timeLeft}s</p>
             </div>
 
-            {/* Botões principais */}
-            <div style={styles.buttonsRow}>
+            <div className="buttons-row">
               <button
-                style={styles.primaryButton}
+                className="btn-primary"
                 onClick={handleSortWord}
                 disabled={isRunning && !!currentWord}
               >
                 Sortear palavra
               </button>
               <button
-                style={styles.secondaryButton}
+                className="btn-secondary"
                 onClick={stopTimer}
                 disabled={!isRunning}
               >
                 Parar tempo
               </button>
-              <button
-                style={styles.secondaryButton}
-                onClick={handleSkipWord}
-              >
+              <button className="btn-secondary" onClick={handleSkipWord}>
                 Pular palavra
               </button>
               <button
-                style={styles.secondaryButton}
+                className="btn-secondary"
                 onClick={handleValidateRound}
                 disabled={!currentWord}
               >
@@ -327,25 +326,91 @@ function App() {
               </button>
             </div>
 
-            <button style={styles.linkButton} onClick={handleResetRaffle}>
+            <button className="btn-link" onClick={handleResetRaffle}>
               Reiniciar roleta (recarregar todas as palavras)
             </button>
+
+            {/* Participantes */}
+            <div className="participants">
+              <h2 className="participants-title">Participantes</h2>
+
+              <form
+                className="participants-form"
+                onSubmit={handleAddParticipant}
+              >
+                <input
+                  className="participants-input"
+                  placeholder="Nome do participante"
+                  value={newParticipantName}
+                  onChange={(e) => setNewParticipantName(e.target.value)}
+                />
+                <button type="submit" className="btn-primary">
+                  Adicionar
+                </button>
+              </form>
+
+              <div className="participant-list">
+                {participants.length === 0 ? (
+                  <p className="history-empty">Nenhum participante ainda.</p>
+                ) : (
+                  participants.map((p) => (
+                    <div
+                      key={p.id}
+                      className={
+                        "participant-item" +
+                        (p.id === activeParticipantId
+                          ? " participant-item--active"
+                          : "")
+                      }
+                      onClick={() => setActiveParticipantId(p.id)}
+                    >
+                      <span>{p.name}</span>
+                      <div className="participant-score-buttons">
+                        <button
+                          type="button"
+                          className="participant-score-btn participant-score-btn--minus"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            changeScore(p.id, -1);
+                          }}
+                        >
+                          −
+                        </button>
+                        <span className="participant-score-value">
+                          {p.score}
+                        </span>
+                        <button
+                          type="button"
+                          className="participant-score-btn participant-score-btn--plus"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            changeScore(p.id, +1);
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Painel direito (25%) com palavras já sorteadas */}
-          <div style={styles.rightPanel}>
-            <h2 style={styles.historyTitle}>Palavras que já saíram</h2>
+          {/* Painel direito: histórico de palavras */}
+          <div className="right-panel">
+            <h2 className="history-title">Palavras que já saíram</h2>
             {history.length === 0 ? (
-              <p style={styles.historyEmpty}>Nenhuma palavra sorteada ainda.</p>
+              <p className="history-empty">Nenhuma palavra sorteada ainda.</p>
             ) : (
-              <ul style={styles.historyList}>
+              <ul className="history-list">
                 {history.map((item) => (
-                  <li key={item.createdAt} style={styles.historyItem}>
-                    <span style={styles.historyWord}>
+                  <li key={item.createdAt} className="history-item">
+                    <span className="history-word">
                       {item.word.toUpperCase()}
                     </span>
-                    {item.theme && (
-                      <span style={styles.historyMeta}>{item.theme}</span>
+                    {item.validated && (
+                      <span className="history-meta">✓</span>
                     )}
                   </li>
                 ))}
@@ -354,32 +419,33 @@ function App() {
           </div>
         </div>
 
-        {/* Admin: adicionar palavra (fica embaixo) */}
-        <div style={styles.adminContainer}>
+        {/* Admin: adicionar palavra */}
+        <div className="admin-container">
           <button
-            style={styles.adminToggle}
+            className="admin-toggle"
             onClick={() => setAdminOpen((v) => !v)}
           >
             {adminOpen ? "Fechar admin" : "Abrir admin (adicionar palavra)"}
           </button>
 
           {adminOpen && (
-            <form style={styles.adminForm} onSubmit={handleAddWord}>
+            <form className="admin-form" onSubmit={handleAddWord}>
               <h2 style={{ marginBottom: "0.5rem" }}>Adicionar nova palavra</h2>
-              <label style={styles.fieldLabel}>
+
+              <label className="field-label">
                 Palavra*
                 <input
-                  style={styles.input}
+                  className="field-input"
                   value={newWord}
                   onChange={(e) => setNewWord(e.target.value)}
                   required
                 />
               </label>
 
-              <label style={styles.fieldLabel}>
+              <label className="field-label">
                 Idioma
                 <select
-                  style={styles.input}
+                  className="field-input"
                   value={newLanguage}
                   onChange={(e) => setNewLanguage(e.target.value)}
                 >
@@ -389,29 +455,25 @@ function App() {
                 </select>
               </label>
 
-              <label style={styles.fieldLabel}>
+              <label className="field-label">
                 Tema (opcional)
                 <input
-                  style={styles.input}
+                  className="field-input"
                   value={newTheme}
                   onChange={(e) => setNewTheme(e.target.value)}
                 />
               </label>
 
-              <label style={styles.fieldLabel}>
+              <label className="field-label">
                 URL do YouTube (opcional)
                 <input
-                  style={styles.input}
+                  className="field-input"
                   value={newYoutubeUrl}
                   onChange={(e) => setNewYoutubeUrl(e.target.value)}
                 />
               </label>
 
-              <button
-                style={styles.primaryButton}
-                type="submit"
-                disabled={savingWord}
-              >
+              <button className="btn-primary" type="submit" disabled={savingWord}>
                 {savingWord ? "Salvando..." : "Salvar palavra"}
               </button>
             </form>
@@ -421,262 +483,5 @@ function App() {
     </div>
   );
 }
-
-// Estilos inline simples para manter num único arquivo
-const styles = {
-  // Página inteira: só garante altura e fonte
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "flex-start",
-    padding: "2rem 1rem 4rem",
-    fontFamily:
-      "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-    // IMPORTANTE: o background de imagem está no CSS global (index.css)
-    // aqui deixamos transparente para a imagem aparecer
-    background: "transparent",
-  },
-
-  // Caixa principal semi-transparente sobre o background
-  mainOverlay: {
-    width: "100%",
-    maxWidth: "1200px",
-    background: "rgba(3, 7, 18, 0.82)", // preto com transparência
-    borderRadius: "1rem",
-    border: "1px solid rgba(148, 163, 184, 0.4)",
-    padding: "1.5rem 1.75rem 2rem",
-    color: "#e5e7eb",
-    boxShadow: "0 25px 50px rgba(15, 23, 42, 0.7)",
-  },
-
-  headerRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: "1.25rem",
-    gap: "1rem",
-  },
-
-  title: {
-    fontSize: "2.4rem",
-    margin: 0,
-    padding: "0.2rem 1rem",
-    background: "#111827",
-    borderRadius: "0.75rem",
-  },
-
-  subtitle: {
-    marginTop: "0.3rem",
-    marginLeft: "0.5rem",
-    fontSize: "0.95rem",
-    fontStyle: "italic",
-    color: "#e5e7eb",
-  },
-
-  languageSwitch: {
-    display: "flex",
-    gap: "0.5rem",
-  },
-
-  langButton: {
-    padding: "0.4rem 0.8rem",
-    borderRadius: "999px",
-    border: "1px solid #4b5563",
-    background: "rgba(15,23,42,0.8)",
-    color: "#e5e7eb",
-    cursor: "pointer",
-    fontSize: "0.9rem",
-  },
-
-  langButtonActive: {
-    padding: "0.4rem 0.8rem",
-    borderRadius: "999px",
-    border: "1px solid #facc15",
-    background: "#facc15",
-    color: "#111827",
-    cursor: "pointer",
-    fontSize: "0.9rem",
-    fontWeight: "bold",
-  },
-
-  contentRow: {
-    display: "flex",
-    gap: "1.25rem",
-    alignItems: "stretch",
-  },
-
-  // Painel da esquerda (3/4)
-  leftPanel: {
-    flex: 3,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-  },
-
-  // Painel da direita (1/4)
-  rightPanel: {
-    flex: 1,
-    background: "rgba(15, 23, 42, 0.9)",
-    borderRadius: "0.75rem",
-    padding: "0.75rem 0.9rem",
-    border: "1px solid rgba(55, 65, 81, 0.8)",
-    maxHeight: "420px",
-    overflowY: "auto",
-  },
-
-  historyTitle: {
-    fontSize: "1.1rem",
-    margin: "0 0 0.5rem 0",
-  },
-
-  historyEmpty: {
-    fontSize: "0.9rem",
-    color: "#9ca3af",
-  },
-
-  historyList: {
-    listStyle: "none",
-    padding: 0,
-    margin: 0,
-  },
-
-  historyItem: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: "0.9rem",
-    padding: "0.25rem 0",
-    borderBottom: "1px dashed rgba(55, 65, 81, 0.6)",
-  },
-
-  historyWord: {
-    fontWeight: "bold",
-  },
-
-  historyMeta: {
-    fontSize: "0.78rem",
-    color: "#9ca3af",
-    marginLeft: "0.5rem",
-  },
-
-  currentBox: {
-    background: "rgba(3, 7, 18, 0.95)",
-    border: "1px solid #4b5563",
-    borderRadius: "1rem",
-    padding: "1.5rem 2rem",
-    textAlign: "center",
-    marginBottom: "1.5rem",
-    maxWidth: "540px",
-    width: "100%",
-  },
-
-  label: {
-    fontSize: "0.9rem",
-    color: "#9ca3af",
-    marginBottom: "0.25rem",
-  },
-
-  word: {
-    fontSize: "3.2rem",
-    fontWeight: "bold",
-    letterSpacing: "0.12em",
-    margin: "0.25rem 0",
-  },
-
-  meta: {
-    fontSize: "0.9rem",
-    color: "#9ca3af",
-    marginTop: "0.5rem",
-  },
-
-  timer: {
-    marginTop: "0.75rem",
-    fontSize: "1.4rem",
-    fontWeight: "bold",
-    color: "#fbbf24",
-  },
-
-  buttonsRow: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "0.75rem",
-    justifyContent: "center",
-    marginBottom: "0.75rem",
-  },
-
-  primaryButton: {
-    padding: "0.75rem 1.7rem",
-    borderRadius: "999px",
-    border: "none",
-    background: "#22c55e",
-    color: "#0b1120",
-    fontWeight: "bold",
-    cursor: "pointer",
-    fontSize: "1rem",
-  },
-
-  secondaryButton: {
-    padding: "0.75rem 1.4rem",
-    borderRadius: "999px",
-    border: "none",
-    background: "#1d4ed8",
-    color: "#e5e7eb",
-    fontWeight: "500",
-    cursor: "pointer",
-    fontSize: "0.95rem",
-  },
-
-  linkButton: {
-    marginTop: "0.25rem",
-    marginBottom: "0.5rem",
-    background: "transparent",
-    color: "#93c5fd",
-    border: "none",
-    cursor: "pointer",
-    textDecoration: "underline",
-    fontSize: "0.9rem",
-  },
-
-  adminContainer: {
-    marginTop: "1.5rem",
-  },
-
-  adminToggle: {
-    padding: "0.5rem 1rem",
-    borderRadius: "999px",
-    border: "1px solid #4b5563",
-    background: "transparent",
-    color: "#e5e7eb",
-    cursor: "pointer",
-    fontSize: "0.9rem",
-  },
-
-  adminForm: {
-    marginTop: "1rem",
-    padding: "1rem 1.25rem",
-    borderRadius: "0.75rem",
-    border: "1px solid #1f2937",
-    background: "#020617",
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.75rem",
-  },
-
-  fieldLabel: {
-    fontSize: "0.85rem",
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.25rem",
-  },
-
-  input: {
-    padding: "0.5rem 0.75rem",
-    borderRadius: "0.5rem",
-    border: "1px solid #4b5563",
-    background: "#020617",
-    color: "#e5e7eb",
-  },
-};
 
 export default App;
