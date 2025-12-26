@@ -92,22 +92,31 @@ button {
   font-weight: bold;
 }
 
-/* Layout 3/4 + 1/4 */
+/* ----- LAYOUT 3 COLUNAS ----- */
+/* participantes | roleta | histórico */
+
 .content-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
   gap: 1.25rem;
-  align-items: stretch;
+  align-items: flex-start;
 }
 
-.left-panel {
-  flex: 3;
+/* Coluna de participantes (esquerda) */
+.participants-column {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Coluna central (roleta) */
+.center-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
+/* Painel direito (histórico) */
 .right-panel {
-  flex: 1;
   background: rgba(15, 23, 42, 0.9);
   border-radius: 0.75rem;
   padding: 0.75rem 0.9rem;
@@ -234,7 +243,6 @@ button {
 
 /* Participantes */
 .participants {
-  margin-top: 1.5rem;
   width: 100%;
   max-width: 540px;
 }
