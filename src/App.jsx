@@ -462,7 +462,7 @@ const styles = {
     fontSize: "2.4rem",
     margin: 0,
     padding: "0.2rem 1rem",
-    background: "#b91c1c",
+    background: "#111827",
     borderRadius: "0.75rem",
   },
 
