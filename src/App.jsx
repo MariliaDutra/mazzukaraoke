@@ -167,6 +167,7 @@ function App() {
     }
   }
 
+  // Reinicia só a roleta (palavras da sessão)
   function handleResetRaffle() {
     setAvailableWords(allWords);
     setCurrentWord(null);
@@ -174,6 +175,21 @@ function App() {
     setIsRunning(false);
     setErrorMsg("");
     setHistory([]);
+  }
+
+  // Zera TUDO: palavras da sessão, histórico, participantes, pontuação
+  function handleResetGame() {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+
+    setCurrentWord(null);
+    setTimeLeft(0);
+    setIsRunning(false);
+    setErrorMsg("");
+    setHistory([]);
+    setAvailableWords(allWords);
+    setParticipants([]);
+    setActiveParticipantId(null);
   }
 
   // 5) Inserir palavra no Supabase
@@ -243,6 +259,13 @@ function App() {
         p.id === id ? { ...p, score: p.score + delta } : p
       )
     );
+  }
+
+  function handleRemoveParticipant(id) {
+    setParticipants((prev) => prev.filter((p) => p.id !== id));
+    if (activeParticipantId === id) {
+      setActiveParticipantId(null);
+    }
   }
 
   // 7) Render
@@ -351,6 +374,17 @@ function App() {
                         >
                           +
                         </button>
+                        {/* Botão para remover participante */}
+                        <button
+                          type="button"
+                          className="participant-remove-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveParticipant(p.id);
+                          }}
+                        >
+                          x
+                        </button>
                       </div>
                     </div>
                   ))
@@ -361,6 +395,15 @@ function App() {
 
           {/* Coluna 2: Roleta */}
           <div className="center-panel">
+            {/* Botão sortear em cima da caixa */}
+            <button
+              className="btn-primary btn-sortear-top"
+              onClick={handleSortWord}
+              disabled={isRunning && !!currentWord}
+            >
+              Sortear palavra
+            </button>
+
             <div className="current-box">
               <p className="current-label">Palavra sorteada:</p>
               <p className="current-word">
@@ -376,21 +419,17 @@ function App() {
               <p className="current-timer">Tempo: {timeLeft}s</p>
             </div>
 
+            {/* Botão parar grande, vermelho, embaixo da caixa */}
+            <button
+              className="btn-stop-big"
+              onClick={stopTimer}
+              disabled={!isRunning}
+            >
+              Parar tempo
+            </button>
+
+            {/* Botões auxiliares embaixo */}
             <div className="buttons-row">
-              <button
-                className="btn-primary"
-                onClick={handleSortWord}
-                disabled={isRunning && !!currentWord}
-              >
-                Sortear palavra
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={stopTimer}
-                disabled={!isRunning}
-              >
-                Parar tempo
-              </button>
               <button className="btn-secondary" onClick={handleSkipWord}>
                 Pular palavra
               </button>
@@ -401,11 +440,13 @@ function App() {
               >
                 Validar música
               </button>
+              <button className="btn-secondary" onClick={handleResetRaffle}>
+                Reiniciar roleta
+              </button>
+              <button className="btn-secondary" onClick={handleResetGame}>
+                Zerar jogo
+              </button>
             </div>
-
-            <button className="btn-link" onClick={handleResetRaffle}>
-              Reiniciar roleta (recarregar todas as palavras)
-            </button>
           </div>
 
           {/* Coluna 3: Histórico */}
