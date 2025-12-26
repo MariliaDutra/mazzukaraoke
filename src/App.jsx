@@ -4,23 +4,31 @@ import { supabase } from "./supabaseClient";
 const ROUND_TIME_SECONDS = 7;
 
 function App() {
+  // Palavras
   const [allWords, setAllWords] = useState([]);
   const [availableWords, setAvailableWords] = useState([]);
   const [currentWord, setCurrentWord] = useState(null);
 
+  // Timer
   const [timeLeft, setTimeLeft] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
 
+  // Estado geral
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // Histórico de palavras sorteadas
   const [history, setHistory] = useState([]);
+
+  // Filtro de idioma
   const [languageFilter, setLanguageFilter] = useState("ALL");
 
+  // Participantes
   const [participants, setParticipants] = useState([]);
   const [newParticipantName, setNewParticipantName] = useState("");
   const [activeParticipantId, setActiveParticipantId] = useState(null);
 
+  // Admin palavras
   const [newWord, setNewWord] = useState("");
   const [newLanguage, setNewLanguage] = useState("PT");
   const [newTheme, setNewTheme] = useState("");
@@ -30,7 +38,7 @@ function App() {
 
   const timerRef = useRef(null);
 
-  // 1) Carrega palavras do Supabase sempre que o filtro de idioma muda
+  // 1) Carrega palavras do Supabase quando idioma muda
   useEffect(() => {
     async function loadWords() {
       setLoading(true);
@@ -63,14 +71,14 @@ function App() {
     loadWords();
   }, [languageFilter]);
 
-  // Limpa o timer se o componente desmontar
+  // Limpa timer ao desmontar
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
 
-  // 2) Timer simples de contagem regressiva
+  // 2) Timer
   function startTimer() {
     setIsRunning(true);
     setTimeLeft(ROUND_TIME_SECONDS);
@@ -137,7 +145,7 @@ function App() {
     setTimeLeft(0);
   }
 
-  // 4) Validar música: para timer, marca histórico e dá ponto ao participante ativo
+  // 4) Validar música: marca histórico + ponto p/ participante ativo
   function handleValidateRound() {
     if (!currentWord) return;
     stopTimer();
@@ -168,7 +176,7 @@ function App() {
     setHistory([]);
   }
 
-  // 5) Inserir nova palavra no Supabase (admin)
+  // 5) Inserir palavra no Supabase
   async function handleAddWord(e) {
     e.preventDefault();
     if (!newWord.trim()) return;
@@ -252,7 +260,7 @@ function App() {
   return (
     <div className="page">
       <div className="main-overlay">
-        {/* Título + filtro idioma */}
+        {/* Título + idioma */}
         <div className="header-row">
           <div>
             <h1 className="app-title">Vitrola Mágica</h1>
@@ -281,56 +289,10 @@ function App() {
 
         {errorMsg && <p className="error-message">{errorMsg}</p>}
 
+        {/* 3 colunas: participantes | roleta | histórico */}
         <div className="content-row">
-          {/* Painel esquerdo: roleta + participantes */}
-          <div className="left-panel">
-            <div className="current-box">
-              <p className="current-label">Palavra sorteada:</p>
-              <p className="current-word">
-                {currentWord ? currentWord.word.toUpperCase() : "—"}
-              </p>
-              {currentWord && (
-                <p className="current-meta">
-                  {currentWord.language
-                    ? `Idioma: ${currentWord.language}`
-                    : ""}
-                </p>
-              )}
-              <p className="current-timer">Tempo: {timeLeft}s</p>
-            </div>
-
-            <div className="buttons-row">
-              <button
-                className="btn-primary"
-                onClick={handleSortWord}
-                disabled={isRunning && !!currentWord}
-              >
-                Sortear palavra
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={stopTimer}
-                disabled={!isRunning}
-              >
-                Parar tempo
-              </button>
-              <button className="btn-secondary" onClick={handleSkipWord}>
-                Pular palavra
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={handleValidateRound}
-                disabled={!currentWord}
-              >
-                Validar música
-              </button>
-            </div>
-
-            <button className="btn-link" onClick={handleResetRaffle}>
-              Reiniciar roleta (recarregar todas as palavras)
-            </button>
-
-            {/* Participantes */}
+          {/* Coluna 1: Participantes */}
+          <div className="participants-column">
             <div className="participants">
               <h2 className="participants-title">Participantes</h2>
 
@@ -397,7 +359,56 @@ function App() {
             </div>
           </div>
 
-          {/* Painel direito: histórico de palavras */}
+          {/* Coluna 2: Roleta */}
+          <div className="center-panel">
+            <div className="current-box">
+              <p className="current-label">Palavra sorteada:</p>
+              <p className="current-word">
+                {currentWord ? currentWord.word.toUpperCase() : "—"}
+              </p>
+              {currentWord && (
+                <p className="current-meta">
+                  {currentWord.language
+                    ? `Idioma: ${currentWord.language}`
+                    : ""}
+                </p>
+              )}
+              <p className="current-timer">Tempo: {timeLeft}s</p>
+            </div>
+
+            <div className="buttons-row">
+              <button
+                className="btn-primary"
+                onClick={handleSortWord}
+                disabled={isRunning && !!currentWord}
+              >
+                Sortear palavra
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={stopTimer}
+                disabled={!isRunning}
+              >
+                Parar tempo
+              </button>
+              <button className="btn-secondary" onClick={handleSkipWord}>
+                Pular palavra
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={handleValidateRound}
+                disabled={!currentWord}
+              >
+                Validar música
+              </button>
+            </div>
+
+            <button className="btn-link" onClick={handleResetRaffle}>
+              Reiniciar roleta (recarregar todas as palavras)
+            </button>
+          </div>
+
+          {/* Coluna 3: Histórico */}
           <div className="right-panel">
             <h2 className="history-title">Palavras que já saíram</h2>
             {history.length === 0 ? (
