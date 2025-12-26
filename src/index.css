@@ -345,4 +345,16 @@ button {
 }
 
 .field-input {
-  padding
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #4b5563;
+  background: #020617;
+  color: #e5e7eb;
+}
+
+/* Mensagens de erro */
+.error-message {
+  color: #fecaca;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
