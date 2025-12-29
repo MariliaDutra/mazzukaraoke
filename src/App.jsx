@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "./supabaseClient";
 
-const ROUND_TIME_SECONDS = 7;
+const ROUND_TIME_SECONDS = 10;
 
 function App() {
   // Palavras
@@ -27,6 +27,10 @@ function App() {
   const [participants, setParticipants] = useState([]);
   const [newParticipantName, setNewParticipantName] = useState("");
   const [activeParticipantId, setActiveParticipantId] = useState(null);
+
+  // Modal do vídeo YouTube
+const [videoModalOpen, setVideoModalOpen] = useState(false);
+const [currentVideoUrl, setCurrentVideoUrl] = useState("");
 
   // Admin palavras
   const [newWord, setNewWord] = useState("");
@@ -145,27 +149,35 @@ function App() {
     setTimeLeft(0);
   }
 
-  // 4) Validar música: marca histórico + ponto p/ participante ativo
-  function handleValidateRound() {
-    if (!currentWord) return;
-    stopTimer();
+  // 4) Validar palavra: abre vídeo se existir + dá ponto
+function handleValidateRound() {
+  if (!currentWord) return;
+  stopTimer();
 
-    setHistory((prev) =>
-      prev.map((item, index) =>
-        index === 0 && item.word === currentWord.word
-          ? { ...item, validated: true }
-          : item
+  // Marca histórico como validado
+  setHistory((prev) =>
+    prev.map((item, index) =>
+      index === 0 && item.word === currentWord.word
+        ? { ...item, validated: true }
+        : item
+    )
+  );
+
+  // Dá ponto ao participante ativo (se tiver)
+  if (activeParticipantId) {
+    setParticipants((prev) =>
+      prev.map((p) =>
+        p.id === activeParticipantId ? { ...p, score: p.score + 1 } : p
       )
     );
-
-    if (activeParticipantId) {
-      setParticipants((prev) =>
-        prev.map((p) =>
-          p.id === activeParticipantId ? { ...p, score: p.score + 1 } : p
-        )
-      );
-    }
   }
+
+  // ✅ SE TEM VÍDEO, abre modal
+  if (currentWord.youtube_url) {
+    setCurrentVideoUrl(currentWord.youtube_url);
+    setVideoModalOpen(true);
+  }
+}
 
   // Reinicia só a roleta (palavras da sessão)
   function handleResetRaffle() {
@@ -267,6 +279,14 @@ function App() {
       setActiveParticipantId(null);
     }
   }
+
+  // Extrai ID do YouTube de qualquer URL
+function extractVideoId(url) {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
 
   // 7) Render
   if (loading) {
@@ -434,13 +454,13 @@ function App() {
                 Pular palavra
               </button>
               <button
-                className="btn-secondary"
-                onClick={handleValidateRound}
-                disabled={!currentWord}
-              >
-                Validar música
-              </button>
-              <button className="btn-secondary" onClick={handleResetRaffle}>
+  className="btn-secondary"
+  onClick={handleValidateRound}
+  disabled={!currentWord}
+>
+  Validar Palavra  {/* ← MUDOU DE "música" pra "Palavra" */}
+</button>
+             <button className="btn-secondary" onClick={handleResetRaffle}>
                 Reiniciar roleta
               </button>
               <button className="btn-secondary" onClick={handleResetGame}>
@@ -470,6 +490,33 @@ function App() {
             )}
           </div>
         </div>
+
+                {/* Modal do vídeo YouTube */}
+        {videoModalOpen && (
+          <div 
+            className="video-modal-overlay"
+            onClick={() => setVideoModalOpen(false)}
+          >
+            <div 
+              className="video-modal"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button 
+                className="video-modal-close"
+                onClick={() => setVideoModalOpen(false)}
+              >
+                ×
+              </button>
+              <iframe
+                src={`https://www.youtube.com/embed/${extractVideoId(currentVideoUrl)}?autoplay=1`}
+                className="video-iframe"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title="Vídeo sugerido"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Admin: adicionar palavra */}
         <div className="admin-container">
