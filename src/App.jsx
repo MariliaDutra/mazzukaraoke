@@ -509,32 +509,36 @@ function extractVideoId(url) {
           </div>
         </div>
 
-                {/* Modal do vídeo YouTube */}
-        {videoModalOpen && (
-          <div 
-            className="video-modal-overlay"
-            onClick={() => setVideoModalOpen(false)}
-          >
-            <div 
-              className="video-modal"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button 
-                className="video-modal-close"
-                onClick={() => setVideoModalOpen(false)}
-              >
-                ×
-              </button>
-              <iframe
-                src={`https://www.youtube.com/embed/${extractVideoId(currentVideoUrl)}?autoplay=1`}
-                className="video-iframe"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                title="Vídeo sugerido"
-              />
-            </div>
-          </div>
-        )}
+              {/* Modal do vídeo YouTube */}
+{videoModalOpen && (
+  <div 
+    className="video-modal-overlay"
+    onClick={() => setVideoModalOpen(false)}
+  >
+    <div 
+      className="video-modal"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button 
+        className="video-modal-close"
+        onClick={() => setVideoModalOpen(false)}
+      >
+        ×
+      </button>
+      <iframe
+        src={
+          extractVideoId(currentVideoUrl) 
+            ? `${extractVideoId(currentVideoUrl)}${extractVideoId(currentVideoUrl)?.includes('?') ? '&' : '?'}autoplay=1`
+            : 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1'
+        }
+        className="video-iframe"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+        title="Vídeo sugerido"
+      />
+    </div>
+  </div>
+)}
 
         {/* Admin: adicionar palavra */}
         <div className="admin-container">
