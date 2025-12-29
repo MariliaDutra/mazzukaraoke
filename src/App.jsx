@@ -280,23 +280,23 @@ function handleValidateRound() {
     }
   }
 
-// Extrai ID do YouTube e mantém timestamp (?t=XX)
+// Extrai ID do YouTube e timestamp correto para embed
 function extractVideoId(url) {
   // Pega o ID do vídeo
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
   const videoId = (match && match[2].length === 11) ? match[2] : null;
   
-  if (!videoId) return null;
+  if (!videoId) return videoId;
   
-  // Extrai timestamp da URL original (?t=81 ou &t=120s)
+  // Extrai timestamp (?t=81 ou &t=120s)
   const timeMatch = url.match(/[?&]t=([\d]+)/);
-  const startTime = timeMatch ? `&start=${timeMatch[1]}` : '';
+  if (timeMatch) {
+    return `${videoId}?start=${timeMatch[1]}`;
+  }
   
-  return `${videoId}${startTime}`;
+  return videoId;
 }
-
-
   // 7) Render
   if (loading) {
     return (
