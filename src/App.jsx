@@ -280,22 +280,31 @@ function handleValidateRound() {
     }
   }
 
-// Extrai ID do YouTube e timestamp correto para embed
+// Extrai URL completa do YouTube embed com timestamp
 function extractVideoId(url) {
-  // Pega o ID do vídeo
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-  const match = url.match(regExp);
-  const videoId = (match && match[2].length === 11) ? match[2] : null;
-  
-  if (!videoId) return videoId;
-  
-  // Extrai timestamp (?t=81 ou &t=120s)
-  const timeMatch = url.match(/[?&]t=([\d]+)/);
-  if (timeMatch) {
-    return `${videoId}?start=${timeMatch[1]}`;
+  try {
+    // Pega ID do vídeo
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    const videoId = (match && match[2].length === 11) ? match[2] : null;
+    
+    if (!videoId) return null;
+    
+    // Constrói URL embed base
+    let embedUrl = `https://www.youtube.com/embed/${videoId}`;
+    
+    // Extrai timestamp (?t=81 ou &t=120s) e adiciona como start
+    const timeMatch = url.match(/[?&]t=([\d\w]+)/i);
+    if (timeMatch) {
+      const timeSeconds = timeMatch[1];
+      embedUrl += `?start=${timeSeconds}`;
+    }
+    
+    return embedUrl;
+  } catch (e) {
+    console.error('Erro ao processar URL YouTube:', url, e);
+    return null;
   }
-  
-  return videoId;
 }
   // 7) Render
   if (loading) {
