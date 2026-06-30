@@ -261,11 +261,23 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
   }
 
   function drawVideoOnly(ctx, slide, idx, a, y) {
-    const fw = 1120, fh = 630, fx = W / 2 - fw / 2, fy = (H - fh) / 2 - 30;
-    ctx.save(); ctx.globalAlpha = a; ctx.translate(0, y);
     const el = elemDe(idx + "_0");
-    if (el) { molduraFoto(ctx, fx, fy, fw, fh, 18); drawMidia(ctx, el, fx, fy, fw, fh, mediaMap[idx + "_0"].t, 18); }
-    else molduraVazia(ctx, fx, fy, fw, fh, "arraste um vídeo");
+    // Contain the video within available area, preserving its aspect ratio
+    const vw = el ? (el.videoWidth || 1920) : 1920;
+    const vh = el ? (el.videoHeight || 1080) : 1080;
+    const maxW = 1200, maxH = 900;
+    const s = Math.min(maxW / vw, maxH / vh);
+    const fw = Math.round(vw * s), fh = Math.round(vh * s);
+    const fx = W / 2 - fw / 2, fy = Math.round((H - fh) / 2) - 20;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(0, y);
+    if (el) {
+      molduraFoto(ctx, fx, fy, fw, fh, 18);
+      ctx.save(); roundRect(ctx, fx, fy, fw, fh, 18); ctx.clip();
+      ctx.drawImage(el, fx, fy, fw, fh);
+      ctx.restore();
+    } else {
+      molduraVazia(ctx, W / 2 - 560, (H - 630) / 2 - 30, 1120, 630, "arraste um vídeo");
+    }
     ctx.restore(); legenda(ctx, slide.legenda, W / 2, fy + fh + 64, a);
   }
 
