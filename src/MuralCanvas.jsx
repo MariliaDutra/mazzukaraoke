@@ -27,8 +27,6 @@ export function slotsDe(slide, i) {
 const ehVideo = f => (f.type || "").startsWith("video");
 
 // ── MuralCanvas ───────────────────────────────────────────────────────────────
-// slides: array of slide objects
-// mediaMap / setMediaMap: lifted state from parent so EditorTab can share
 export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEditor }) {
   const fundo = "#5e7153";
   const seg = SEGUNDOS_POR_TELA;
@@ -172,22 +170,38 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
     [...text].forEach((c, i) => { ctx.fillText(c, x, cy); x += widths[i]; }); ctx.restore();
   }
 
-  function blocoTexto(ctx, slide, cx, topY, alpha, sombraForte) {
+  // Auto-fits text vertically within available canvas space
+  function blocoTexto(ctx, slide, cx, areaTop, areaBottom, alpha, sombraForte) {
     ctx.save(); ctx.globalAlpha = alpha; ctx.textAlign = "center";
     if (sombraForte) { ctx.shadowColor = "rgba(0,0,0,0.65)"; ctx.shadowBlur = 24; ctx.shadowOffsetY = 3; }
     else { ctx.shadowColor = "rgba(0,0,0,0.3)"; ctx.shadowBlur = 20; ctx.shadowOffsetY = 2; }
-    const longa = (slide.texto || "").length > 150;
-    const fs = longa ? 54 : 62, lh = fs * 1.4, maxW = 1240;
+
+    const maxW = 1280;
+    const nameH = 90; // separator gap + script name line
+    const availH = areaBottom - areaTop - nameH - 30;
+
+    // Try font sizes from 66 down until lines fit
+    let fs = 66, lines;
+    for (fs = 66; fs >= 30; fs -= 4) {
+      ctx.font = `500 ${fs}px ${SERIF}`;
+      lines = wrap(ctx, slide.texto || "", maxW);
+      if (lines.length * fs * 1.45 <= availH) break;
+    }
+    const lh = fs * 1.45;
+    const blockH = lines.length * lh;
+    // center the text block in the available area
+    let yy = areaTop + Math.max(0, (availH - blockH) / 2) + fs;
+
     ctx.fillStyle = COR.creme; ctx.font = `500 ${fs}px ${SERIF}`; ctx.textBaseline = "alphabetic";
-    const lines = wrap(ctx, slide.texto || "", maxW);
-    let yy = topY;
     lines.forEach(l => { ctx.fillText(l, cx, yy); yy += lh; });
+
     ctx.shadowColor = "transparent"; ctx.strokeStyle = rgba(COR.ouro, 0.7); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx - 46, yy + 6); ctx.lineTo(cx + 46, yy + 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 46, yy + 8); ctx.lineTo(cx + 46, yy + 8); ctx.stroke();
+
     if (sombraForte) { ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 18; }
     ctx.fillStyle = COR.ouro; ctx.font = `66px ${SCRIPT}`; ctx.textBaseline = "alphabetic";
-    ctx.fillText(slide.nome || "", cx, yy + 78);
-    ctx.restore(); return yy + 78;
+    ctx.fillText(slide.nome || "", cx, yy + nameH);
+    ctx.restore(); return yy + nameH;
   }
 
   function legenda(ctx, txt, cx, yy, alpha) {
@@ -222,18 +236,19 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
         ctx.fillStyle = sc; ctx.fillRect(46, 46, W - 92, H - 92);
       } else molduraVazia(ctx, W / 2 - 360, H / 2 - 150, 720, 300, "arraste uma foto de fundo");
       ctx.restore();
-      ctx.save(); ctx.translate(0, y); blocoTexto(ctx, slide, W / 2, H / 2 - 40, a, true); ctx.restore();
+      ctx.save(); ctx.translate(0, y); blocoTexto(ctx, slide, W / 2, 100, H - 100, a, true); ctx.restore();
       return;
     }
     if (slide.foto === "lado") {
-      const el = elemDe(idx + "_0"), fw = 560, fh = 360, fx = W / 2 - fw / 2, fy = 150;
+      const el = elemDe(idx + "_0"), fw = 560, fh = 360, fx = W / 2 - fw / 2, fy = 130;
       ctx.save(); ctx.translate(0, y); ctx.globalAlpha = a;
       if (el) { molduraFoto(ctx, fx, fy, fw, fh, 16); drawMidia(ctx, el, fx, fy, fw, fh, mediaMap[idx + "_0"].t, 16); }
       else molduraVazia(ctx, fx, fy, fw, fh, "arraste uma foto");
-      ctx.globalAlpha = 1; blocoTexto(ctx, slide, W / 2, fy + fh + 110, a, false); ctx.restore();
+      ctx.globalAlpha = 1; blocoTexto(ctx, slide, W / 2, fy + fh + 60, H - 60, a, false); ctx.restore();
       return;
     }
-    ctx.save(); ctx.translate(0, y); blocoTexto(ctx, slide, W / 2, H / 2 - 70, a, false); ctx.restore();
+    // Só texto — full vertical area
+    ctx.save(); ctx.translate(0, y); blocoTexto(ctx, slide, W / 2, 100, H - 80, a, false); ctx.restore();
   }
 
   function drawFoto(ctx, slide, idx, a, y) {
@@ -254,20 +269,54 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
     ctx.restore(); legenda(ctx, slide.legenda, W / 2, fy + fh + 64, a);
   }
 
+  function layoutRects(n, retrato, ax, top, areaW, areaH, gap) {
+    if (retrato) {
+      // Portrait (vertical) photo layouts — tall slots
+      if (n <= 2) { const w = (areaW - gap) / 2; return [[ax, top, w, areaH], [ax + w + gap, top, w, areaH]]; }
+      if (n === 3) { const w = (areaW - 2 * gap) / 3; return Array.from({ length: 3 }, (_, k) => [ax + k * (w + gap), top, w, areaH]); }
+      if (n === 4) { const w = (areaW - 3 * gap) / 4; return Array.from({ length: 4 }, (_, k) => [ax + k * (w + gap), top, w, areaH]); }
+      if (n === 5) {
+        const h2 = (areaH - gap) / 2, w3 = (areaW - 2 * gap) / 3, w2 = (areaW - gap) / 2;
+        return [
+          [ax, top, w3, h2], [ax + w3 + gap, top, w3, h2], [ax + 2 * (w3 + gap), top, w3, h2],
+          [ax, top + h2 + gap, w2, h2], [ax + w2 + gap, top + h2 + gap, w2, h2],
+        ];
+      }
+      // 6: 3×2
+      const w6 = (areaW - 2 * gap) / 3, h6 = (areaH - gap) / 2;
+      return Array.from({ length: 6 }, (_, k) => [ax + (k % 3) * (w6 + gap), top + Math.floor(k / 3) * (h6 + gap), w6, h6]);
+    } else {
+      // Landscape layouts
+      if (n <= 1) return [[ax, top, areaW, areaH]];
+      if (n === 2) { const w = (areaW - gap) / 2; return [[ax, top, w, areaH], [ax + w + gap, top, w, areaH]]; }
+      if (n === 3) { const bw = areaW * 0.56, sw = areaW - bw - gap, sh = (areaH - gap) / 2; return [[ax, top, bw, areaH], [ax + bw + gap, top, sw, sh], [ax + bw + gap, top + sh + gap, sw, sh]]; }
+      if (n === 4) { const w = (areaW - gap) / 2, h = (areaH - gap) / 2; return [[ax, top, w, h], [ax + w + gap, top, w, h], [ax, top + h + gap, w, h], [ax + w + gap, top + h + gap, w, h]]; }
+      if (n === 5) {
+        const h2 = (areaH - gap) / 2, wt = (areaW - gap) / 2, wb = (areaW - 2 * gap) / 3;
+        return [
+          [ax, top, wt, h2], [ax + wt + gap, top, wt, h2],
+          [ax, top + h2 + gap, wb, h2], [ax + wb + gap, top + h2 + gap, wb, h2], [ax + 2 * (wb + gap), top + h2 + gap, wb, h2],
+        ];
+      }
+      // 6: 3×2
+      const w6 = (areaW - 2 * gap) / 3, h6 = (areaH - gap) / 2;
+      return Array.from({ length: 6 }, (_, k) => [ax + (k % 3) * (w6 + gap), top + Math.floor(k / 3) * (h6 + gap), w6, h6]);
+    }
+  }
+
   function drawColagem(ctx, slide, idx, a, y) {
-    const n = slide.fotos || 3, gap = 26;
+    const n = slide.fotos || 3, gap = 22, retrato = slide.orientacao === "retrato";
     ctx.save(); ctx.globalAlpha = a; ctx.translate(0, y);
-    if (slide.titulo) { ctx.fillStyle = COR.ouro; ctx.font = `64px ${SCRIPT}`; ctx.textAlign = "center"; ctx.shadowColor = "rgba(0,0,0,0.4)"; ctx.shadowBlur = 14; ctx.fillText(slide.titulo, W / 2, 130); ctx.shadowColor = "transparent"; }
-    const top = slide.titulo ? 190 : 120, areaW = 1360, areaH = H - top - 110, ax = (W - areaW) / 2;
-    let rects = [];
-    if (n <= 1) rects = [[ax, top, areaW, areaH]];
-    else if (n === 2) { const w = (areaW - gap) / 2; rects = [[ax, top, w, areaH], [ax + w + gap, top, w, areaH]]; }
-    else if (n === 3) { const bw = areaW * 0.56, sw = areaW - bw - gap, sh = (areaH - gap) / 2; rects = [[ax, top, bw, areaH], [ax + bw + gap, top, sw, sh], [ax + bw + gap, top + sh + gap, sw, sh]]; }
-    else { const w = (areaW - gap) / 2, h = (areaH - gap) / 2; rects = [[ax, top, w, h], [ax + w + gap, top, w, h], [ax, top + h + gap, w, h], [ax + w + gap, top + h + gap, w, h]]; }
-    rects = rects.slice(0, n);
+    if (slide.titulo) {
+      ctx.fillStyle = COR.ouro; ctx.font = `64px ${SCRIPT}`; ctx.textAlign = "center";
+      ctx.shadowColor = "rgba(0,0,0,0.4)"; ctx.shadowBlur = 14;
+      ctx.fillText(slide.titulo, W / 2, 130); ctx.shadowColor = "transparent";
+    }
+    const top = slide.titulo ? 180 : 100, areaW = 1400, areaH = H - top - 90, ax = (W - areaW) / 2;
+    const rects = layoutRects(n, retrato, ax, top, areaW, areaH, gap).slice(0, n);
     rects.forEach(([rx, ry, rw, rh], k) => {
       const el = elemDe(idx + "_" + k);
-      if (el) { molduraFoto(ctx, rx, ry, rw, rh, 14); drawMidia(ctx, el, rx, ry, rw, rh, mediaMap[idx + "_" + k]?.t, 14); }
+      if (el) { molduraFoto(ctx, rx, ry, rw, rh, 12); drawMidia(ctx, el, rx, ry, rw, rh, mediaMap[idx + "_" + k]?.t, 12); }
       else molduraVazia(ctx, rx, ry, rw, rh, `foto ${k + 1}`);
     });
     ctx.restore();
