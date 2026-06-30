@@ -215,11 +215,22 @@ function SlideDetail({ slide, idx, mediaMap, setMediaMap, onChange, onChangeTipo
           <Field label="Título (opcional)" value={slide.titulo || ""} onChange={v => onChange({ titulo: v })} />
           <div style={{ marginBottom: 18 }}>
             <Label>Número de fotos</Label>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              {[2, 3, 4].map(n => (
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              {[2, 3, 4, 5, 6].map(n => (
                 <button key={n} onClick={() => onChange({ fotos: n })}
                   style={{ width: 44, height: 36, borderRadius: 8, border: `1px solid ${slide.fotos === n ? COR.ouro : rgba(COR.ouro, 0.3)}`, background: slide.fotos === n ? rgba(COR.ouro, 0.18) : "transparent", color: COR.creme, cursor: "pointer", fontSize: 16, fontFamily: SERIF }}>
                   {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <Label>Orientação das fotos</Label>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              {[{ v: "paisagem", l: "Paisagem (horizontal)" }, { v: "retrato", l: "Retrato (vertical)" }].map(o => (
+                <button key={o.v} onClick={() => onChange({ orientacao: o.v })}
+                  style={{ padding: "7px 16px", borderRadius: 999, border: `1px solid ${(slide.orientacao || "paisagem") === o.v ? COR.ouro : rgba(COR.ouro, 0.3)}`, background: (slide.orientacao || "paisagem") === o.v ? rgba(COR.ouro, 0.18) : "transparent", color: COR.creme, cursor: "pointer", fontSize: 14, fontFamily: SERIF }}>
+                  {o.l}
                 </button>
               ))}
             </div>
