@@ -112,16 +112,24 @@ export default function EditorTab({ slides, setSlides, mediaMap, setMediaMap }) 
       {/* detail panel */}
       <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
         {expandido !== null && expandido < slides.length ? (
-          <SlideDetail
-            slide={slides[expandido]}
-            idx={expandido}
-            mediaMap={mediaMap}
-            setMediaMap={setMediaMap}
-            onChange={(patch) => update(expandido, patch)}
-            onChangeTipo={(key) => {
-              setSlides(prev => { const s = [...prev]; s[expandido] = keyToSlide(key, s[expandido]); return s; });
-            }}
-          />
+          <>
+            <button
+              onClick={() => setExpandido(null)}
+              style={{ background: "none", border: "none", color: rgba(COR.ouro, 0.75), cursor: "pointer", fontSize: 15, fontFamily: SERIF, marginBottom: 20, padding: 0, display: "flex", alignItems: "center", gap: 6 }}
+            >
+              ← Voltar
+            </button>
+            <SlideDetail
+              slide={slides[expandido]}
+              idx={expandido}
+              mediaMap={mediaMap}
+              setMediaMap={setMediaMap}
+              onChange={(patch) => update(expandido, patch)}
+              onChangeTipo={(key) => {
+                setSlides(prev => { const s = [...prev]; s[expandido] = keyToSlide(key, s[expandido]); return s; });
+              }}
+            />
+          </>
         ) : (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", opacity: 0.4, fontSize: 22, fontFamily: SCRIPT, color: COR.ouro }}>
             Selecione um slide para editar
