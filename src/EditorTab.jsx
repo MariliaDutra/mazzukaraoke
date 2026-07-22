@@ -1,6 +1,6 @@
 import React from 'react';
 import { slotsDe } from './MuralCanvas.jsx';
-import { idbSet, idbDel, idbAll, blobToDataURL } from './slidesStore.js';
+import { idbSet, idbDel, idbAll, blobToDataURL, exportBackup, importBackup } from './slidesStore.js';
 
 const COR = { creme: "#f7f3e7", ouro: "#d7c48f", sagia: "#aeb98a" };
 const SERIF = "'Cormorant Garamond', Georgia, serif";
@@ -54,6 +54,39 @@ export default function EditorTab({ slides, setSlides, mediaMap, setMediaMap }) 
     setMediaMap(p => { const n = { ...p }; n[targetId] = n[orphanId]; delete n[orphanId]; return n; });
   }
 
+  const [backupBusy, setBackupBusy] = React.useState(false);
+  const importInputRef = React.useRef(null);
+
+  async function baixarBackup() {
+    setBackupBusy(true);
+    try {
+      const backup = await exportBackup(slides);
+      const blob = new Blob([JSON.stringify(backup)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "mural-backup.json";
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch {
+      alert("Não foi possível gerar o backup.");
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function importarBackup(file) {
+    if (!file) return;
+    if (!window.confirm("Importar vai substituir os slides e fotos deste navegador pelos do backup. Continuar?")) return;
+    setBackupBusy(true);
+    try {
+      const backup = JSON.parse(await file.text());
+      await importBackup(backup);
+      window.location.reload();
+    } catch {
+      alert("Não foi possível importar esse arquivo de backup.");
+      setBackupBusy(false);
+    }
+  }
+
   function update(i, patch) {
     setSlides(prev => { const s = [...prev]; s[i] = { ...s[i], ...patch }; return s; });
   }
@@ -100,6 +133,12 @@ export default function EditorTab({ slides, setSlides, mediaMap, setMediaMap }) 
         <div style={{ padding: "22px 20px 14px", borderBottom: `1px solid ${rgba(COR.ouro, 0.15)}` }}>
           <div style={{ fontSize: 26, fontFamily: SCRIPT, color: COR.ouro, marginBottom: 4 }}>Slides</div>
           <p style={{ margin: 0, fontSize: 14, opacity: 0.65, lineHeight: 1.4 }}>Arraste para reordenar. Clique para editar.</p>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <input ref={importInputRef} type="file" accept="application/json" style={{ display: "none" }}
+              onChange={e => { importarBackup(e.target.files[0]); e.target.value = ""; }} />
+            <SmBtn onClick={baixarBackup} disabled={backupBusy}>⬇ Baixar backup</SmBtn>
+            <SmBtn onClick={() => importInputRef.current.click()} disabled={backupBusy}>⬆ Importar backup</SmBtn>
+          </div>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 80px" }}>
           {slides.map((slide, i) => (

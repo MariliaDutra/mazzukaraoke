@@ -89,3 +89,33 @@ export async function idbDel(k) {
 export function blobToDataURL(b) {
   return new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
 }
+
+// ── backup / restore (para levar slides + fotos/vídeos de um navegador pro outro) ──
+const BACKUP_VERSION = 1;
+
+function base64ToBlob(b64, mime) {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return new Blob([bytes], { type: mime });
+}
+
+export async function exportBackup(slides) {
+  const { keys, vals } = await idbAll();
+  const media = {};
+  for (let i = 0; i < keys.length; i++) {
+    const v = vals[i];
+    const dataUrl = await blobToDataURL(v.blob);
+    media[keys[i]] = { tipo: v.tipo, mime: v.blob.type, t: v.t, data: dataUrl.split(",")[1] || "" };
+  }
+  return { version: BACKUP_VERSION, slides, media };
+}
+
+export async function importBackup(backup) {
+  if (!backup || backup.version !== BACKUP_VERSION || !Array.isArray(backup.slides)) {
+    throw new Error("Arquivo de backup inválido");
+  }
+  saveSlides(backup.slides);
+  for (const [key, m] of Object.entries(backup.media || {})) {
+    const mime = m.mime || (m.tipo === "video" ? "video/mp4" : "image/jpeg");
+    await idbSet(key, { blob: base64ToBlob(m.data, mime), tipo: m.tipo, t: m.t });
+  }
+}
