@@ -430,6 +430,25 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
       return;
     }
 
+    // Pede onde salvar JÁ NO INÍCIO, antes de qualquer outro await. O Chrome só deixa
+    // abrir esse diálogo bem colado ao clique do usuário — qualquer espera antes dele
+    // (ex: checar codecs) pode fazer o navegador recusar o diálogo silenciosamente.
+    let fileHandle = null;
+    if (window.showSaveFilePicker) {
+      try {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: "mural-debora-marilia.mp4",
+          types: [
+            { description: "Vídeo MP4", accept: { "video/mp4": [".mp4"] } },
+            { description: "Vídeo WebM", accept: { "video/webm": [".webm"] } },
+          ],
+        });
+      } catch (err) {
+        if (err && err.name === "AbortError") return; // usuário cancelou o diálogo de salvar
+        fileHandle = null; // navegador não deixou abrir o diálogo — segue com o método antigo
+      }
+    }
+
     const FPS = 30;
     const totalFrames = Math.max(1, Math.round(total * FPS));
     let cancelado = false;
@@ -443,22 +462,6 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
       } catch {}
     }
     if (!escolha) { alert("Seu navegador não suporta essa exportação. Use uma versão recente do Chrome."); return; }
-
-    // Vídeos longos (a montagem inteira pode passar de vários minutos) não cabem
-    // inteiros na memória — sempre que possível, grava direto no disco em vez de
-    // acumular tudo num buffer só, que é o que travava no final ao gerar o arquivo.
-    let fileHandle = null;
-    if (window.showSaveFilePicker) {
-      try {
-        fileHandle = await window.showSaveFilePicker({
-          suggestedName: `mural-debora-marilia.${escolha.ext}`,
-          types: [{ description: escolha.formato === "mp4" ? "Vídeo MP4" : "Vídeo WebM", accept: { [escolha.mime]: [`.${escolha.ext}`] } }],
-        });
-      } catch (err) {
-        if (err && err.name === "AbortError") return; // usuário cancelou o diálogo de salvar
-        fileHandle = null;
-      }
-    }
 
     exportingRef.current = true; setExporting(true); setExpPct(0);
 
