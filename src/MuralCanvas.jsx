@@ -1,5 +1,16 @@
 import React from 'react';
+import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4ArrayBufferTarget } from 'mp4-muxer';
+import { Muxer as WebmMuxer, ArrayBufferTarget as WebmArrayBufferTarget } from 'webm-muxer';
 import { idbSet, idbAll, idbDel, blobToDataURL } from './slidesStore.js';
+
+// Codecs to try, in order of preference. H.264/mp4 plays everywhere but needs an
+// OpenH264 encoder component that isn't always present; VP9/VP8 (webm) always ship with Chromium.
+const EXPORT_CODECS = [
+  { webCodec: "avc1.640034", muxCodec: "avc", ext: "mp4", mime: "video/mp4", formato: "mp4" },
+  { webCodec: "avc1.42001f", muxCodec: "avc", ext: "mp4", mime: "video/mp4", formato: "mp4" },
+  { webCodec: "vp09.00.10.08", muxCodec: "V_VP9", ext: "webm", mime: "video/webm", formato: "webm" },
+  { webCodec: "vp8", muxCodec: "V_VP8", ext: "webm", mime: "video/webm", formato: "webm" },
+];
 
 // ── constants ────────────────────────────────────────────────────────────────
 const W = 1920, H = 1080;
@@ -393,8 +404,8 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
         timeRef.current = (timeRef.current + (ts - (loop._last || ts)) / 1000) % total;
       }
       loop._last = ts;
-      drawRef.current(timeRef.current);
-      if (ts - lastUi > 80) { lastUi = ts; setUiTime(timeRef.current); if (exportingRef.current) setExpPct(Math.min(1, timeRef.current / total)); }
+      if (!exportingRef.current) drawRef.current(timeRef.current);
+      if (ts - lastUi > 80 && !exportingRef.current) { lastUi = ts; setUiTime(timeRef.current); }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -409,28 +420,85 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
     window.addEventListener("resize", measure); return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
   }, []);
 
-  // export MP4
-  const exportar = React.useCallback(() => {
+  // export MP4 — renders frame by frame (not in real time) via WebCodecs
+  const exportar = React.useCallback(async () => {
     if (exportingRef.current) return;
     const canvas = canvasRef.current;
-    if (!canvas || !canvas.captureStream) { alert("Use o Chrome para exportar vídeo."); return; }
-    const cand = ["video/mp4;codecs=avc1.42E01E", "video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
-    const mime = cand.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
-    const stream = canvas.captureStream(30);
-    let rec; try { rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 16000000 } : {}); } catch { alert("Não foi possível iniciar a gravação."); return; }
-    const chunks = [];
-    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-    rec.onstop = () => {
-      const ext = mime.includes("mp4") ? "mp4" : "webm";
-      const blob = new Blob(chunks, { type: mime || "video/webm" });
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `mural-debora-marilia.${ext}`; document.body.appendChild(a); a.click(); a.remove();
+    if (!canvas || typeof VideoEncoder === "undefined") {
+      alert("Seu navegador não suporta essa exportação. Use uma versão recente do Chrome.");
+      return;
+    }
+
+    const FPS = 30;
+    const totalFrames = Math.max(1, Math.round(total * FPS));
+    let cancelado = false;
+    stopExportRef.current = () => { cancelado = true; };
+
+    let escolha = null;
+    for (const cand of EXPORT_CODECS) {
+      try {
+        const r = await VideoEncoder.isConfigSupported({ codec: cand.webCodec, width: W, height: H, bitrate: 16_000_000, framerate: FPS });
+        if (r.supported) { escolha = cand; break; }
+      } catch {}
+    }
+    if (!escolha) { alert("Seu navegador não suporta essa exportação. Use uma versão recente do Chrome."); return; }
+
+    exportingRef.current = true; setExporting(true); setExpPct(0);
+
+    const videos = Object.values(videoRefs.current).filter(Boolean);
+    videos.forEach(v => { try { v.pause(); } catch {} });
+
+    const muxer = escolha.formato === "mp4"
+      ? new Mp4Muxer({ target: new Mp4ArrayBufferTarget(), video: { codec: escolha.muxCodec, width: W, height: H }, fastStart: "in-memory" })
+      : new WebmMuxer({ target: new WebmArrayBufferTarget(), video: { codec: escolha.muxCodec, width: W, height: H, frameRate: FPS } });
+    const encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (e) => console.error("Erro ao codificar vídeo:", e),
+    });
+    encoder.configure({ codec: escolha.webCodec, width: W, height: H, bitrate: 16_000_000, framerate: FPS });
+
+    const seekVideo = (video, t) => new Promise((resolve) => {
+      if (!video || !isFinite(video.duration) || video.duration <= 0) return resolve();
+      const dur = video.duration;
+      const alvo = ((t % dur) + dur) % dur;
+      if (Math.abs(video.currentTime - alvo) < 1 / FPS / 2) return resolve();
+      const onSeeked = () => { video.removeEventListener("seeked", onSeeked); resolve(); };
+      video.addEventListener("seeked", onSeeked);
+      video.currentTime = alvo;
+    });
+
+    try {
+      for (let i = 0; i < totalFrames; i++) {
+        if (cancelado) throw new Error("cancelado");
+        const time = i / FPS;
+        const segActiva = segmentos.find(s => time >= s.start && time < s.end) || segmentos[segmentos.length - 1];
+        if (segActiva.slide && segActiva.slide.tipo === "video") {
+          await seekVideo(videoRefs.current[segActiva.idx + "_0"], time - segActiva.start);
+        }
+        drawRef.current(time);
+
+        while (encoder.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 0));
+        const frame = new VideoFrame(canvas, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+        encoder.encode(frame, { keyFrame: i % (FPS * 2) === 0 });
+        frame.close();
+
+        if (i % 3 === 0) { setExpPct(i / totalFrames); await new Promise(r => setTimeout(r, 0)); }
+      }
+      await encoder.flush();
+      muxer.finalize();
+      const blob = new Blob([muxer.target.buffer], { type: escolha.mime });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = `mural-debora-marilia.${escolha.ext}`;
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch (err) {
+      if (err?.message !== "cancelado") { console.error(err); alert("Não foi possível gerar o vídeo."); }
+    } finally {
+      try { encoder.close(); } catch {}
+      videos.forEach(v => { try { v.play(); } catch {} });
       exportingRef.current = false; setExporting(false); setExpPct(0);
-    };
-    setExporting(true); setExpPct(0);
-    timeRef.current = 0; setUiTime(0); playingRef.current = true; setPlaying(true); exportingRef.current = true;
-    stopExportRef.current = () => { try { rec.stop(); } catch {} };
-    rec.start(200);
-  }, [total]);
+      stopExportRef.current = null;
+    }
+  }, [total, segmentos]);
 
   const videoSlots = [];
   segmentos.forEach(s => { if (s.slide) slotsDe(s.slide, s.idx).forEach(sl => { if (mediaMap[sl.id]?.tipo === "video") videoSlots.push(sl.id); }); });
@@ -463,14 +531,14 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
         <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 15, width: 46, opacity: 0.55 }}>{fmt(total)}</span>
         <BtnGhost onClick={onRequestEditor}>Fotos &amp; vídeos</BtnGhost>
         <BtnGold onClick={exportar} disabled={exporting} style={{ opacity: exporting ? 0.6 : 1 }}>
-          {exporting ? `Gravando ${Math.round(expPct * 100)}%` : "⬇ Exportar MP4"}
+          {exporting ? `Gerando ${Math.round(expPct * 100)}%` : "⬇ Exportar MP4"}
         </BtnGold>
       </div>
 
       {exporting && (
         <div style={{ position: "fixed", left: "50%", bottom: 86, transform: "translateX(-50%)", zIndex: 12000, background: "rgba(16,19,13,0.96)", color: COR.creme, padding: "14px 22px", borderRadius: 12, border: `1px solid ${rgba(COR.ouro, 0.4)}`, textAlign: "center", maxWidth: 520 }}>
-          <div style={{ fontSize: 19, marginBottom: 4 }}>Gravando o vídeo… {Math.round(expPct * 100)}%</div>
-          <div style={{ fontSize: 15, opacity: 0.75 }}>Deixe esta aba aberta e em foco até terminar. O download começa sozinho.</div>
+          <div style={{ fontSize: 19, marginBottom: 4 }}>Gerando o vídeo… {Math.round(expPct * 100)}%</div>
+          <div style={{ fontSize: 15, opacity: 0.75 }}>Deixe esta aba aberta até terminar. O download começa sozinho.</div>
           <div style={{ marginTop: 10, height: 6, borderRadius: 3, background: rgba(COR.creme, 0.15) }}><div style={{ height: 6, borderRadius: 3, width: `${expPct * 100}%`, background: COR.ouro }} /></div>
           <button onClick={() => { stopExportRef.current?.(); }} style={{ marginTop: 10, background: "transparent", border: `1px solid ${rgba(COR.creme, 0.3)}`, color: COR.creme, padding: "4px 14px", borderRadius: 8, cursor: "pointer", fontSize: 14 }}>Cancelar</button>
         </div>
