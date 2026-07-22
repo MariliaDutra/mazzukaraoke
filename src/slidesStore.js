@@ -49,7 +49,7 @@ export const DEFAULT_SLIDES = [
   { tipo: "frase", texto: "Meninas Espero que a vida de casadas de vocês sempre tenha amor, paz, união e reciprocidade.... Sejam muitooo felizes . Vocês merecem!", nome: "Vic Donadio" },
 ];
 
-const LS_KEY = "mural-slides-v1";
+const LS_KEY = "mural-slides-v2";
 
 export function loadSlides() {
   try {
