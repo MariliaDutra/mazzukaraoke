@@ -1,10 +1,11 @@
 import React from 'react';
-import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4ArrayBufferTarget } from 'mp4-muxer';
-import { Muxer as WebmMuxer, ArrayBufferTarget as WebmArrayBufferTarget } from 'webm-muxer';
+import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4ArrayBufferTarget, FileSystemWritableFileStreamTarget as Mp4FileSystemTarget } from 'mp4-muxer';
+import { Muxer as WebmMuxer, ArrayBufferTarget as WebmArrayBufferTarget, FileSystemWritableFileStreamTarget as WebmFileSystemTarget } from 'webm-muxer';
 import { idbSet, idbAll, idbDel, blobToDataURL } from './slidesStore.js';
 
 // Codecs to try, in order of preference. H.264/mp4 plays everywhere but needs an
 // OpenH264 encoder component that isn't always present; VP9/VP8 (webm) always ship with Chromium.
+const BITRATE = 8_000_000;
 const EXPORT_CODECS = [
   { webCodec: "avc1.640034", muxCodec: "avc", ext: "mp4", mime: "video/mp4", formato: "mp4" },
   { webCodec: "avc1.42001f", muxCodec: "avc", ext: "mp4", mime: "video/mp4", formato: "mp4" },
@@ -437,25 +438,52 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
     let escolha = null;
     for (const cand of EXPORT_CODECS) {
       try {
-        const r = await VideoEncoder.isConfigSupported({ codec: cand.webCodec, width: W, height: H, bitrate: 16_000_000, framerate: FPS });
+        const r = await VideoEncoder.isConfigSupported({ codec: cand.webCodec, width: W, height: H, bitrate: BITRATE, framerate: FPS });
         if (r.supported) { escolha = cand; break; }
       } catch {}
     }
     if (!escolha) { alert("Seu navegador não suporta essa exportação. Use uma versão recente do Chrome."); return; }
+
+    // Vídeos longos (a montagem inteira pode passar de vários minutos) não cabem
+    // inteiros na memória — sempre que possível, grava direto no disco em vez de
+    // acumular tudo num buffer só, que é o que travava no final ao gerar o arquivo.
+    let fileHandle = null;
+    if (window.showSaveFilePicker) {
+      try {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: `mural-debora-marilia.${escolha.ext}`,
+          types: [{ description: escolha.formato === "mp4" ? "Vídeo MP4" : "Vídeo WebM", accept: { [escolha.mime]: [`.${escolha.ext}`] } }],
+        });
+      } catch (err) {
+        if (err && err.name === "AbortError") return; // usuário cancelou o diálogo de salvar
+        fileHandle = null;
+      }
+    }
 
     exportingRef.current = true; setExporting(true); setExpPct(0);
 
     const videos = Object.values(videoRefs.current).filter(Boolean);
     videos.forEach(v => { try { v.pause(); } catch {} });
 
+    let writable = null;
+    if (fileHandle) { try { writable = await fileHandle.createWritable(); } catch { writable = null; } }
+
     const muxer = escolha.formato === "mp4"
-      ? new Mp4Muxer({ target: new Mp4ArrayBufferTarget(), video: { codec: escolha.muxCodec, width: W, height: H }, fastStart: "in-memory" })
-      : new WebmMuxer({ target: new WebmArrayBufferTarget(), video: { codec: escolha.muxCodec, width: W, height: H, frameRate: FPS } });
+      ? new Mp4Muxer({
+          target: writable ? new Mp4FileSystemTarget(writable) : new Mp4ArrayBufferTarget(),
+          video: { codec: escolha.muxCodec, width: W, height: H },
+          fastStart: writable ? false : "in-memory",
+        })
+      : new WebmMuxer({
+          target: writable ? new WebmFileSystemTarget(writable) : new WebmArrayBufferTarget(),
+          video: { codec: escolha.muxCodec, width: W, height: H, frameRate: FPS },
+          streaming: !!writable,
+        });
     const encoder = new VideoEncoder({
       output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
       error: (e) => console.error("Erro ao codificar vídeo:", e),
     });
-    encoder.configure({ codec: escolha.webCodec, width: W, height: H, bitrate: 16_000_000, framerate: FPS });
+    encoder.configure({ codec: escolha.webCodec, width: W, height: H, bitrate: BITRATE, framerate: FPS });
 
     const seekVideo = (video, t) => new Promise((resolve) => {
       if (!video || !isFinite(video.duration) || video.duration <= 0) return resolve();
@@ -486,12 +514,17 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
       }
       await encoder.flush();
       muxer.finalize();
-      const blob = new Blob([muxer.target.buffer], { type: escolha.mime });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob); a.download = `mural-debora-marilia.${escolha.ext}`;
-      document.body.appendChild(a); a.click(); a.remove();
+      if (writable) {
+        await writable.close();
+      } else {
+        const blob = new Blob([muxer.target.buffer], { type: escolha.mime });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = `mural-debora-marilia.${escolha.ext}`;
+        document.body.appendChild(a); a.click(); a.remove();
+      }
     } catch (err) {
       if (err?.message !== "cancelado") { console.error(err); alert("Não foi possível gerar o vídeo."); }
+      if (writable) { try { await writable.abort(); } catch {} }
     } finally {
       try { encoder.close(); } catch {}
       videos.forEach(v => { try { v.play(); } catch {} });
