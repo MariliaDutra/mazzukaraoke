@@ -38,6 +38,22 @@ export default function EditorTab({ slides, setSlides, mediaMap, setMediaMap }) 
   const [drag, setDrag] = React.useState(null); // index being dragged
   const [dragOver, setDragOver] = React.useState(null);
 
+  // media que está salva no navegador mas nenhum slide atual referencia (ex: slides resetados)
+  const usedIds = React.useMemo(() => {
+    const s = new Set();
+    slides.forEach((sl, i) => slotsDe(sl, i).forEach(sl2 => s.add(sl2.id)));
+    return s;
+  }, [slides]);
+  const orphanIds = Object.keys(mediaMap).filter(id => !usedIds.has(id));
+
+  async function moveOrphan(orphanId, targetId) {
+    const { keys, vals } = await idbAll();
+    const k = keys.indexOf(orphanId);
+    if (k < 0) return;
+    try { await idbSet(targetId, vals[k]); await idbDel(orphanId); } catch {}
+    setMediaMap(p => { const n = { ...p }; n[targetId] = n[orphanId]; delete n[orphanId]; return n; });
+  }
+
   function update(i, patch) {
     setSlides(prev => { const s = [...prev]; s[i] = { ...s[i], ...patch }; return s; });
   }
@@ -111,6 +127,7 @@ export default function EditorTab({ slides, setSlides, mediaMap, setMediaMap }) 
 
       {/* detail panel */}
       <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
+        <OrphanGallery mediaMap={mediaMap} orphanIds={orphanIds} />
         {expandido !== null && expandido < slides.length ? (
           <>
             <button
@@ -124,6 +141,7 @@ export default function EditorTab({ slides, setSlides, mediaMap, setMediaMap }) 
               idx={expandido}
               mediaMap={mediaMap}
               setMediaMap={setMediaMap}
+              onAssignOrphan={moveOrphan}
               onChange={(patch) => update(expandido, patch)}
               onChangeTipo={(key) => {
                 setSlides(prev => { const s = [...prev]; s[expandido] = keyToSlide(key, s[expandido]); return s; });
@@ -184,7 +202,32 @@ function SmBtn({ onClick, disabled, danger, children }) {
   );
 }
 
-function SlideDetail({ slide, idx, mediaMap, setMediaMap, onChange, onChangeTipo }) {
+function OrphanGallery({ mediaMap, orphanIds }) {
+  if (!orphanIds.length) return null;
+  return (
+    <div style={{ marginBottom: 26, padding: "14px 16px", borderRadius: 10, border: `1px dashed ${rgba(COR.ouro, 0.5)}`, background: rgba(COR.ouro, 0.06) }}>
+      <div style={{ fontSize: 16, marginBottom: 4, color: COR.ouro, fontFamily: SERIF }}>Fotos recuperadas ({orphanIds.length})</div>
+      <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.75, lineHeight: 1.4 }}>Estas mídias continuam salvas neste navegador, mas nenhum slide aponta mais para elas. Arraste cada uma para o quadro do slide onde ela deve entrar.</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        {orphanIds.map(id => {
+          const m = mediaMap[id];
+          if (!m) return null;
+          return (
+            <div key={id} draggable onDragStart={e => e.dataTransfer.setData("text/plain", "orphan:" + id)}
+              title="Arraste para um slide"
+              style={{ width: 80, height: 80, borderRadius: 8, overflow: "hidden", cursor: "grab", border: `1px solid ${rgba(COR.ouro, 0.35)}`, flexShrink: 0 }}>
+              {m.tipo === "foto"
+                ? <img src={m.url} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : <video src={m.url} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SlideDetail({ slide, idx, mediaMap, setMediaMap, onAssignOrphan, onChange, onChangeTipo }) {
   const tipoAtual = tipoKey(slide);
   const slots = slotsDe(slide, idx);
 
@@ -243,7 +286,7 @@ function SlideDetail({ slide, idx, mediaMap, setMediaMap, onChange, onChangeTipo
           <Label>Fotos / vídeo</Label>
           <div style={{ display: "grid", gridTemplateColumns: slots.length > 2 ? "1fr 1fr" : "1fr 1fr", gap: 12, marginTop: 10 }}>
             {slots.map(sl => (
-              <MediaSlot key={sl.id} sl={sl} media={mediaMap[sl.id]} setMediaMap={setMediaMap} />
+              <MediaSlot key={sl.id} sl={sl} media={mediaMap[sl.id]} setMediaMap={setMediaMap} onAssignOrphan={onAssignOrphan} />
             ))}
           </div>
         </div>
@@ -271,7 +314,7 @@ function Label({ children }) {
   return <div style={{ fontSize: 13, opacity: 0.6, letterSpacing: "0.06em", textTransform: "uppercase" }}>{children}</div>;
 }
 
-function MediaSlot({ sl, media, setMediaMap }) {
+function MediaSlot({ sl, media, setMediaMap, onAssignOrphan }) {
   const boxRef = React.useRef(null);
   const dragPan = React.useRef(null);
   const inputRef = React.useRef(null);
@@ -328,7 +371,12 @@ function MediaSlot({ sl, media, setMediaMap }) {
       <div ref={boxRef} onClick={() => !media && inputRef.current.click()} onMouseDown={onMouseDown}
         onDragOver={e => { e.preventDefault(); setOver(true); }}
         onDragLeave={() => setOver(false)}
-        onDrop={e => { e.preventDefault(); setOver(false); pickFile(e.dataTransfer.files[0]); }}
+        onDrop={e => {
+          e.preventDefault(); setOver(false);
+          const data = e.dataTransfer.getData("text/plain");
+          if (data.startsWith("orphan:")) { onAssignOrphan(data.slice(7), sl.id); return; }
+          pickFile(e.dataTransfer.files[0]);
+        }}
         style={{ height: 120, borderRadius: 10, overflow: "hidden", position: "relative", cursor: media ? "grab" : "pointer",
           border: `1.5px dashed ${over ? COR.ouro : rgba(COR.ouro, 0.45)}`, background: over ? rgba(COR.ouro, 0.1) : "rgba(0,0,0,0.25)",
           display: "flex", alignItems: "center", justifyContent: "center" }}>
