@@ -8,6 +8,18 @@ const SERIF = "'Cormorant Garamond', Georgia, serif";
 const SCRIPT = "'Parisienne', cursive";
 const SEGUNDOS_ABERTURA = 7;
 const SEGUNDOS_POR_TELA = 9;
+// Tempo de leitura para slides de texto: cresce com o tamanho da mensagem
+const LEITURA_BASE_SEG = 2;
+const LEITURA_PALAVRAS_POR_SEG = 3;
+const LEITURA_MIN_SEG = 5;
+const LEITURA_MAX_SEG = 22;
+
+function duracaoDeLeitura(texto) {
+  const palavras = (texto || "").trim().split(/\s+/).filter(Boolean).length;
+  if (!palavras) return SEGUNDOS_POR_TELA;
+  const seg = LEITURA_BASE_SEG + palavras / LEITURA_PALAVRAS_POR_SEG;
+  return Math.max(LEITURA_MIN_SEG, Math.min(LEITURA_MAX_SEG, seg));
+}
 
 // ── color helpers ─────────────────────────────────────────────────────────────
 function hexRgb(h) { h = h.replace("#", ""); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); }
@@ -34,7 +46,7 @@ export default function MuralCanvas({ slides, mediaMap, setMediaMap, onRequestEd
   const segmentos = React.useMemo(() => {
     const segs = [{ tipo: "abertura", start: 0, end: SEGUNDOS_ABERTURA }];
     let t = SEGUNDOS_ABERTURA;
-    slides.forEach((s, i) => { const d = s.seg || seg; segs.push({ slide: s, idx: i, start: t, end: t + d }); t += d; });
+    slides.forEach((s, i) => { const auto = s.tipo === "frase" ? duracaoDeLeitura(s.texto) : seg; const d = s.seg || auto; segs.push({ slide: s, idx: i, start: t, end: t + d }); t += d; });
     return segs;
   }, [slides, seg]);
   const total = segmentos[segmentos.length - 1].end;
